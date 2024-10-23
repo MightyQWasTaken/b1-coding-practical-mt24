@@ -3,6 +3,7 @@ from dataclasses import dataclass
 import numpy as np
 import matplotlib.pyplot as plt
 from .terrain import generate_reference_and_limits
+import csv
 
 class Submarine:
     def __init__(self):
@@ -68,15 +69,30 @@ class Mission:
     cave_height: np.ndarray
     cave_depth: np.ndarray
 
+    def __init__(self, reference, cave_height, cave_depth):
+        self.reference = reference
+        self.cave_height = cave_height
+        self.cave_depth = cave_depth
+
     @classmethod
     def random_mission(cls, duration: int, scale: float):
         (reference, cave_height, cave_depth) = generate_reference_and_limits(duration, scale)
         return cls(reference, cave_height, cave_depth)
 
     @classmethod
-    def from_csv(cls, file_name: str):
-        # You are required to implement this method
-        pass
+    def from_csv(cls, file_name: str):  
+        missions = []  # To store instances of Mission
+        with open(file_name, mode='r') as file:
+            reader = csv.DictReader(file)
+            for row in reader:
+                # Create a new instance of Mission for each row in the CSV
+                mission = cls(
+                    reference=float(row['reference']),
+                    cave_height=float(row['cave_height']),
+                    cave_depth=float(row['cave_depth']),
+                )
+                missions.append(mission)  # Add the instance to the list
+        return missions  # Return the list of Mission instances
 
 
 class ClosedLoop:
