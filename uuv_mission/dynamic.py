@@ -2,7 +2,9 @@ from __future__ import annotations
 from dataclasses import dataclass
 import numpy as np
 import matplotlib.pyplot as plt
-from .terrain import generate_reference_and_limits
+from terrain import generate_reference_and_limits
+
+# Using Python's csv package instead of using pandas (I learnt pandas over the summer and would like to learn another way of doing this.)
 import csv
 
 class Submarine:
