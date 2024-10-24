@@ -2,7 +2,9 @@ from __future__ import annotations
 from dataclasses import dataclass
 import numpy as np
 import matplotlib.pyplot as plt
+
 from terrain import generate_reference_and_limits
+import control
 
 # Using Python's csv package instead of using pandas (I learnt pandas over the summer and would like to learn another way of doing this.)
 import csv
@@ -21,8 +23,11 @@ class Submarine:
         self.vel_x = 1 # Constant velocity in x direction
         self.vel_y = 0
 
+        self.pos_y_LastTime = 0 # For Controller
+
 
     def transition(self, action: float, disturbance: float):
+        self.pos_y_LastTime = self.pos_y
         self.pos_x += self.vel_x * self.dt
         self.pos_y += self.vel_y * self.dt
 
@@ -33,6 +38,9 @@ class Submarine:
     def get_depth(self) -> float:
         return self.pos_y
     
+    def get_depth_LastTime(self) -> float:
+        return self.pos_y_LastTime
+
     def get_position(self) -> tuple:
         return self.pos_x, self.pos_y
     
@@ -51,30 +59,28 @@ class Trajectory:
         plt.show()
 
     def plot_completed_mission(self, mission: Mission):
-        x_values = np.arange(len(mission.reference))
-        min_depth = np.min(mission.cave_depth)
-        max_height = np.max(mission.cave_height)
+        x_values = np.arange(len(Mission.reference))
+        min_depth = np.min(Mission.cave_depth)
+        max_height = np.max(Mission.cave_height)
 
-        plt.fill_between(x_values, mission.cave_height, mission.cave_depth, color='blue', alpha=0.3)
-        plt.fill_between(x_values, mission.cave_depth, min_depth*np.ones(len(x_values)), 
+        plt.fill_between(x_values, Mission.cave_height, Mission.cave_depth, color='blue', alpha=0.3)
+        plt.fill_between(x_values, Mission.cave_depth, min_depth*np.ones(len(x_values)), 
                          color='saddlebrown', alpha=0.3)
-        plt.fill_between(x_values, max_height*np.ones(len(x_values)), mission.cave_height, 
+        plt.fill_between(x_values, max_height*np.ones(len(x_values)), Mission.cave_height, 
                          color='saddlebrown', alpha=0.3)
         plt.plot(self.position[:, 0], self.position[:, 1], label='Trajectory')
-        plt.plot(mission.reference, 'r', linestyle='--', label='Reference')
+        plt.plot(Mission.reference, 'r', linestyle='--', label='Reference')
         plt.legend(loc='upper right')
         plt.show()
 
 @dataclass
 class Mission:
-    reference: np.ndarray
-    cave_height: np.ndarray
-    cave_depth: np.ndarray
+    def __init__(self):
+        # Initialize attributes as empty lists
+        self.reference = []
+        self.cave_height = []
+        self.cave_depth = []
 
-    def __init__(self, reference, cave_height, cave_depth):
-        self.reference = reference
-        self.cave_height = cave_height
-        self.cave_depth = cave_depth
 
     @classmethod
     def random_mission(cls, duration: int, scale: float):
@@ -82,29 +88,33 @@ class Mission:
         return cls(reference, cave_height, cave_depth)
 
     @classmethod
-    def from_csv(cls, file_name: str):  
-        missions = []  # To store instances of Mission
+    def from_csv(self, file_name: str):
+        self.reference = []
+        self.cave_height = []
+        self.cave_depth = []
+
         with open(file_name, mode='r') as file:
             reader = csv.DictReader(file)
             for row in reader:
-                # Create a new instance of Mission for each row in the CSV
-                mission = cls(
-                    reference=float(row['reference']),
-                    cave_height=float(row['cave_height']),
-                    cave_depth=float(row['cave_depth']),
-                )
-                missions.append(mission)  # Add the instance to the list
-        return missions  # Return the list of Mission instances
+                # Append values to the instance's attributes
+                self.reference.append(float(row['reference']))
+                self.cave_height.append(float(row['cave_height']))
+                self.cave_depth.append(float(row['cave_depth']))
+                reference = self.reference
+                cave_height = self.cave_height
+                cave_depth = self.cave_depth
+
+        return reference, cave_height, cave_depth
+        
 
 
 class ClosedLoop:
-    def __init__(self, plant: Submarine, controller):
+    def __init__(self, plant: Submarine):
         self.plant = plant
-        self.controller = controller
 
-    def simulate(self,  mission: Mission, disturbances: np.ndarray) -> Trajectory:
+    def simulate(self,  mission: Mission, disturbances: np.ndarray, gain:float) -> Trajectory:
 
-        T = len(mission.reference)
+        T = len(Mission.reference)
         if len(disturbances) < T:
             raise ValueError("Disturbances must be at least as long as mission duration")
         
@@ -115,11 +125,13 @@ class ClosedLoop:
         for t in range(T):
             positions[t] = self.plant.get_position()
             observation_t = self.plant.get_depth()
-            # Call your controller here
+            observation_LastTime = self.plant.get_depth_LastTime()
+            actions[t] = control.controller(observation_t, observation_LastTime, t, Mission.reference) * gain
             self.plant.transition(actions[t], disturbances[t])
 
         return Trajectory(positions)
         
-    def simulate_with_random_disturbances(self, mission: Mission, variance: float = 0.5) -> Trajectory:
-        disturbances = np.random.normal(0, variance, len(mission.reference))
-        return self.simulate(mission, disturbances)
+    def simulate_with_random_disturbances(self, mission: Mission, gain:float, variance: float = 0.5) -> Trajectory:
+        # disturbances = np.random.normal(0, variance, len(Mission.reference))
+        disturbances = np.zeros(len(Mission.reference))
+        return self.simulate(mission, disturbances, gain)
